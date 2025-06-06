@@ -2,7 +2,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import yt_dlp
@@ -36,9 +35,6 @@ app.add_middleware(
     expose_headers=["*"],  # Expose tous les en-têtes
     max_age=3600,  # Cache la pré-vérification pendant 1 heure
 )
-
-# Configuration des fichiers statiques
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Constants
 DOWNLOAD_DIR = "./downloads"
