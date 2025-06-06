@@ -14,8 +14,9 @@ Une API FastAPI pour télécharger des vidéos avec différentes options de qual
 
 1. Cloner le repository :
 ```bash
-git clone <votre-repo>
-cd <votre-repo>
+# Remplacez USERNAME par votre nom d'utilisateur GitHub
+git clone https://github.com/USERNAME/video-downloader.git
+cd video-downloader
 ```
 
 2. Installer les dépendances :
@@ -44,7 +45,7 @@ uvicorn "code pour telecharger des videos:app" --reload
 
 L'API sera accessible à l'adresse :
 - Locale : `http://localhost:8000`
-- Production : `https://<votre-app>.onrender.com`
+- Production : `https://video-downloader-XXXX.onrender.com` (l'URL exacte sera générée par Render)
 
 ## Sécurité
 
