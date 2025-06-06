@@ -3,7 +3,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import yt_dlp
@@ -38,8 +37,7 @@ app.add_middleware(
     max_age=3600,  # Cache la pré-vérification pendant 1 heure
 )
 
-# Configuration des templates et fichiers statiques
-templates = Jinja2Templates(directory="templates")
+# Configuration des fichiers statiques
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Constants
