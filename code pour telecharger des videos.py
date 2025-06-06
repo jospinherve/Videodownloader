@@ -8,6 +8,8 @@ import yt_dlp
 import uuid
 import os
 import logging
+import ssl
+import certifi
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -22,6 +24,13 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Configuration SSL
+ssl_context = ssl.create_default_context()
+ssl_context.load_verify_locations(certifi.where())
+
+# Configuration yt-dlp globale
+yt_dlp.utils.std_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 app = FastAPI(title="Video Downloader API")
 
@@ -322,12 +331,34 @@ async def get_formats(url: str):
             'ignoreerrors': True,
             'no_color': True,
             'format': 'best',
+            'socket_timeout': 30,
+            'retries': 10,
+            'fragment_retries': 10,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            }
         }
+
+        # Ajout du certificat SSL si disponible
+        cert_path = certifi.where()
+        if os.path.exists(cert_path):
+            ydl_opts['source_address'] = '0.0.0.0'
+            os.environ['SSL_CERT_FILE'] = cert_path
+            os.environ['REQUESTS_CA_BUNDLE'] = cert_path
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # Extraction des informations sans téléchargement
             info = ydl.extract_info(url, download=False)
             
+            if info is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="La vidéo n'est pas accessible. Elle peut être privée, supprimée ou soumise à des restrictions."
+                )
+
             # Filtrer pour obtenir les meilleurs formats
             best_formats = filter_best_formats(info.get('formats', []))
             
@@ -372,7 +403,6 @@ async def get_formats(url: str):
                         acodec=f.get('acodec')
                     ))
                 except (TypeError, ValueError):
-                    # Ignorer les formats avec des valeurs invalides
                     continue
 
             if not formats:
@@ -392,7 +422,7 @@ async def get_formats(url: str):
         logging.error(f"Erreur lors de la récupération des formats: {str(e)}")
         raise HTTPException(
             status_code=400,
-            detail=f"Erreur lors de la récupération des formats: {str(e)}"
+            detail=f"La vidéo n'est pas accessible ou a été supprimée. Erreur: {str(e)}"
         )
 
 @app.get("/", response_class=HTMLResponse)
