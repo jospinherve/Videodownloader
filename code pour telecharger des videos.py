@@ -119,6 +119,15 @@ def get_best_format(ydl, url, requested_format):
     Détermine le meilleur format disponible pour la vidéo.
     """
     try:
+        # Configuration avancée pour yt-dlp
+        ydl.params.update({
+            'nocheckcertificate': True,
+            'no_warnings': False,
+            'extract_flat': False,
+            'youtube_include_dash_manifest': True,
+            'format': 'best',
+        })
+        
         # Extraction des informations sans téléchargement
         info = ydl.extract_info(url, download=False)
         
@@ -303,9 +312,16 @@ def filter_best_formats(formats):
 async def get_formats(url: str):
     """Récupère les formats disponibles pour une URL donnée."""
     try:
+        # Configuration avancée pour yt-dlp
         ydl_opts = {
             'quiet': True,
-            'no_warnings': True,
+            'no_warnings': False,
+            'extract_flat': False,
+            'youtube_include_dash_manifest': True,
+            'nocheckcertificate': True,
+            'ignoreerrors': True,
+            'no_color': True,
+            'format': 'best',
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
