@@ -1,7 +1,9 @@
 # main.py
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import yt_dlp
@@ -35,6 +37,10 @@ app.add_middleware(
     expose_headers=["*"],  # Expose tous les en-têtes
     max_age=3600,  # Cache la pré-vérification pendant 1 heure
 )
+
+# Configuration des templates et fichiers statiques
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Constants
 DOWNLOAD_DIR = "./downloads"
@@ -378,3 +384,168 @@ async def get_formats(url: str):
             status_code=400,
             detail=f"Erreur lors de la récupération des formats: {str(e)}"
         )
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return """
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Video Downloader</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+            }
+            .input-group {
+                margin-bottom: 20px;
+            }
+            input[type="url"] {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-bottom: 10px;
+            }
+            button {
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                width: 100%;
+            }
+            button:hover {
+                background-color: #0056b3;
+            }
+            #result {
+                margin-top: 20px;
+                padding: 10px;
+                border-radius: 4px;
+            }
+            .success {
+                background-color: #d4edda;
+                color: #155724;
+            }
+            .error {
+                background-color: #f8d7da;
+                color: #721c24;
+            }
+            #formats {
+                margin-top: 10px;
+            }
+            .format-option {
+                margin: 5px 0;
+                padding: 10px;
+                background-color: #f8f9fa;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .format-option:hover {
+                background-color: #e9ecef;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Video Downloader</h1>
+            <div class="input-group">
+                <input type="url" id="videoUrl" placeholder="Entrez l'URL de la vidéo" required>
+                <button onclick="checkFormats()">Vérifier les formats disponibles</button>
+            </div>
+            <div id="formats"></div>
+            <div id="result"></div>
+        </div>
+
+        <script>
+            async function checkFormats() {
+                const url = document.getElementById('videoUrl').value;
+                const resultDiv = document.getElementById('result');
+                const formatsDiv = document.getElementById('formats');
+                
+                if (!url) {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = 'Veuillez entrer une URL valide';
+                    return;
+                }
+
+                try {
+                    resultDiv.textContent = 'Recherche des formats disponibles...';
+                    const response = await fetch(`/formats?url=${encodeURIComponent(url)}`);
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Erreur lors de la récupération des formats');
+                    }
+
+                    formatsDiv.innerHTML = '<h3>Formats disponibles:</h3>';
+                    data.formats.forEach(format => {
+                        const formatDiv = document.createElement('div');
+                        formatDiv.className = 'format-option';
+                        formatDiv.onclick = () => downloadVideo(url, format.format_id);
+                        formatDiv.textContent = `${format.format_note || format.resolution || 'Format inconnu'}`;
+                        formatsDiv.appendChild(formatDiv);
+                    });
+
+                    resultDiv.className = 'success';
+                    resultDiv.textContent = 'Cliquez sur un format pour démarrer le téléchargement';
+                } catch (error) {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = error.message;
+                }
+            }
+
+            async function downloadVideo(url, format) {
+                const resultDiv = document.getElementById('result');
+                try {
+                    resultDiv.textContent = 'Téléchargement en cours...';
+                    const response = await fetch('/download', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            url: url,
+                            format: format
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Erreur lors du téléchargement');
+                    }
+
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = `/file/${data.filename}`;
+                    downloadLink.download = data.filename;
+                    downloadLink.click();
+
+                    resultDiv.className = 'success';
+                    resultDiv.textContent = 'Téléchargement démarré !';
+                } catch (error) {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = error.message;
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
