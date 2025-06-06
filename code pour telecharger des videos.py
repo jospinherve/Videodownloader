@@ -381,7 +381,7 @@ async def get_formats(url: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return """
+    html_content = """
     <!DOCTYPE html>
     <html lang="fr">
     <head>
@@ -395,65 +395,98 @@ async def root(request: Request):
                 margin: 0 auto;
                 padding: 20px;
                 background-color: #f5f5f5;
+                line-height: 1.6;
             }
             .container {
                 background-color: white;
-                padding: 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                margin-top: 20px;
             }
             h1 {
-                color: #333;
+                color: #2c3e50;
                 text-align: center;
+                margin-bottom: 30px;
+                font-size: 2.5em;
             }
             .input-group {
-                margin-bottom: 20px;
+                margin-bottom: 25px;
             }
             input[type="url"] {
                 width: 100%;
-                padding: 10px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                margin-bottom: 10px;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 6px;
+                margin-bottom: 15px;
+                font-size: 16px;
+                transition: border-color 0.3s ease;
+            }
+            input[type="url"]:focus {
+                border-color: #3498db;
+                outline: none;
             }
             button {
-                background-color: #007bff;
+                background-color: #3498db;
                 color: white;
                 border: none;
-                padding: 10px 20px;
-                border-radius: 4px;
+                padding: 12px 25px;
+                border-radius: 6px;
                 cursor: pointer;
                 width: 100%;
+                font-size: 16px;
+                font-weight: bold;
+                transition: background-color 0.3s ease;
             }
             button:hover {
-                background-color: #0056b3;
+                background-color: #2980b9;
             }
             #result {
                 margin-top: 20px;
-                padding: 10px;
-                border-radius: 4px;
+                padding: 15px;
+                border-radius: 6px;
+                font-size: 16px;
             }
             .success {
                 background-color: #d4edda;
                 color: #155724;
+                border: 1px solid #c3e6cb;
             }
             .error {
                 background-color: #f8d7da;
                 color: #721c24;
+                border: 1px solid #f5c6cb;
             }
             #formats {
-                margin-top: 10px;
+                margin-top: 20px;
             }
             .format-option {
-                margin: 5px 0;
-                padding: 10px;
+                margin: 10px 0;
+                padding: 15px;
                 background-color: #f8f9fa;
-                border: 1px solid #ddd;
-                border-radius: 4px;
+                border: 2px solid #e9ecef;
+                border-radius: 6px;
                 cursor: pointer;
+                transition: all 0.3s ease;
+                font-size: 16px;
             }
             .format-option:hover {
                 background-color: #e9ecef;
+                transform: translateY(-2px);
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            .loading {
+                text-align: center;
+                color: #666;
+            }
+            .warning {
+                background-color: #fff3cd;
+                color: #856404;
+                padding: 10px;
+                border-radius: 6px;
+                margin-top: 20px;
+                font-size: 14px;
+                text-align: center;
             }
         </style>
     </head>
@@ -466,6 +499,9 @@ async def root(request: Request):
             </div>
             <div id="formats"></div>
             <div id="result"></div>
+            <div class="warning">
+                Note: Certaines vidéos peuvent être inaccessibles en raison de restrictions géographiques ou de droits d'auteur.
+            </div>
         </div>
 
         <script>
@@ -481,6 +517,7 @@ async def root(request: Request):
                 }
 
                 try {
+                    resultDiv.className = 'loading';
                     resultDiv.textContent = 'Recherche des formats disponibles...';
                     const response = await fetch(`/formats?url=${encodeURIComponent(url)}`);
                     const data = await response.json();
@@ -509,6 +546,7 @@ async def root(request: Request):
             async function downloadVideo(url, format) {
                 const resultDiv = document.getElementById('result');
                 try {
+                    resultDiv.className = 'loading';
                     resultDiv.textContent = 'Téléchargement en cours...';
                     const response = await fetch('/download', {
                         method: 'POST',
@@ -543,3 +581,4 @@ async def root(request: Request):
     </body>
     </html>
     """
+    return HTMLResponse(content=html_content, status_code=200)
