@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Téléchargeur de Vidéos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
+    <div class="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
+        <div class="w-full max-w-2xl bg-gray-800 rounded-lg shadow-xl p-8">
+            <h1 class="text-4xl font-bold mb-2 text-center bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+                Téléchargeur de Vidéos
+            </h1>
+            <p class="text-gray-400 text-center mb-8">
+                Pour contenu libre de droits uniquement
+            </p>
+
+            <div class="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4 mb-6">
+                <p class="text-yellow-200 text-sm">
+                    ⚠️ Rappel : Les fichiers sont automatiquement supprimés après 30 minutes.
+                    Assurez-vous de télécharger votre contenu rapidement.
+                </p>
+            </div>
+
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium mb-2">URL de la vidéo</label>
+                    <div class="flex gap-2">
+                        <input
+                            type="text"
+                            id="videoUrl"
+                            placeholder="Collez le lien de la vidéo ici"
+                            class="p-3 flex-1 rounded-lg bg-gray-700 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                        >
+                        <button 
+                            id="checkFormatsBtn"
+                            class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition disabled:bg-gray-600 disabled:cursor-not-allowed"
+                        >
+                            Vérifier
+                        </button>
+                    </div>
+                </div>
+
+                <div id="formatSelection" class="hidden">
+                    <label class="block text-sm font-medium mb-2">Format</label>
+                    <select 
+                        id="format"
+                        class="p-3 w-full rounded-lg bg-gray-700 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                    >
+                        <option value="">Sélectionnez un format</option>
+                    </select>
+                </div>
+
+                <div id="videoInfo" class="hidden rounded-lg bg-gray-700/50 border border-gray-600 p-4">
+                    <h3 id="videoTitle" class="text-xl font-medium mb-2"></h3>
+                    <img id="videoThumbnail" class="w-full rounded-lg mb-4 object-cover hidden" alt="Thumbnail">
+                    <div id="videoDuration" class="text-sm text-gray-400"></div>
+                </div>
+
+                <button 
+                    id="downloadBtn"
+                    disabled
+                    class="w-full py-3 rounded-lg font-medium transition-all transform hover:scale-[1.02] bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed"
+                >
+                    Télécharger
+                </button>
+
+                <div id="error" class="p-4 rounded-lg bg-red-900/50 border border-red-500 text-red-200 hidden"></div>
+
+                <div id="downloadInfo" class="p-6 rounded-lg bg-gray-700/50 border border-gray-600 hidden">
+                    <div class="flex items-center justify-between">
+                        <div id="downloadProgress" class="text-sm text-gray-400">Téléchargement en cours...</div>
+                        <a 
+                            id="downloadLink"
+                            class="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 transition hidden"
+                        >
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Télécharger le fichier
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8000';
+        const checkFormatsBtn = document.getElementById('checkFormatsBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const errorDiv = document.getElementById('error');
+        const downloadInfoDiv = document.getElementById('downloadInfo');
+        const formatSelection = document.getElementById('formatSelection');
+        const formatSelect = document.getElementById('format');
+        const videoInfo = document.getElementById('videoInfo');
+        let currentVideoInfo = null;
+        let isLoading = false;
+
+        function setLoading(loading) {
+            isLoading = loading;
+            const btn = loading ? checkFormatsBtn : downloadBtn;
+            
+            if (loading) {
+                btn.innerHTML = `
+                    <span class="flex items-center justify-center">
+                        <svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                        ${loading === 'check' ? 'Vérification...' : 'Téléchargement...'}
+                    </span>
+                `;
+                btn.disabled = true;
+            } else {
+                checkFormatsBtn.innerHTML = 'Vérifier';
+                downloadBtn.innerHTML = 'Télécharger';
+                checkFormatsBtn.disabled = false;
+                downloadBtn.disabled = !formatSelect.value;
+            }
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            downloadInfoDiv.classList.add('hidden');
+        }
+
+        function hideError() {
+            errorDiv.classList.add('hidden');
+        }
+
+        function updateVideoInfo(info) {
+            currentVideoInfo = info;
+            document.getElementById('videoTitle').textContent = info.title;
+            
+            const thumbnail = document.getElementById('videoThumbnail');
+            if (info.thumbnail) {
+                thumbnail.src = info.thumbnail;
+                thumbnail.classList.remove('hidden');
+            } else {
+                thumbnail.classList.add('hidden');
+            }
+
+            if (info.duration) {
+                document.getElementById('videoDuration').textContent = 
+                    `Durée: ${Math.floor(info.duration / 60)}:${String(Math.floor(info.duration % 60)).padStart(2, '0')}`;
+            }
+
+            videoInfo.classList.remove('hidden');
+        }
+
+        function formatFileSize(bytes) {
+            if (!bytes) return '';
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+        }
+
+        function updateFormats(formats) {
+            formatSelect.innerHTML = '<option value="">Sélectionnez un format</option>';
+            
+            // Grouper les formats par type
+            const videoFormats = formats.filter(f => f.vcodec !== 'none');
+            const audioFormats = formats.filter(f => f.vcodec === 'none' && f.acodec !== 'none');
+
+            // Ajouter les formats vidéo
+            if (videoFormats.length > 0) {
+                const videoGroup = document.createElement('optgroup');
+                videoGroup.label = 'Formats Vidéo + Audio';
+                videoFormats.forEach(f => {
+                    const option = document.createElement('option');
+                    option.value = f.format_id;
+                    option.textContent = f.format_note || `${f.resolution || 'Audio seulement'} - ${f.ext.toUpperCase()}`;
+                    videoGroup.appendChild(option);
+                });
+                formatSelect.appendChild(videoGroup);
+            }
+
+            // Ajouter les formats audio uniquement
+            if (audioFormats.length > 0) {
+                const audioGroup = document.createElement('optgroup');
+                audioGroup.label = 'Audio Seulement';
+                audioFormats.forEach(f => {
+                    const option = document.createElement('option');
+                    option.value = f.format_id;
+                    option.textContent = f.format_note || `Audio ${f.ext.toUpperCase()}`;
+                    audioGroup.appendChild(option);
+                });
+                formatSelect.appendChild(audioGroup);
+            }
+
+            formatSelection.classList.remove('hidden');
+            downloadBtn.disabled = !formatSelect.value;
+        }
+
+        function showDownloadInfo(info) {
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.href = `${API_BASE_URL}/file/${info.filename}`;
+            downloadLink.download = info.filename;
+            downloadLink.classList.remove('hidden');
+            document.getElementById('downloadProgress').textContent = 'Téléchargement terminé !';
+            downloadInfoDiv.classList.remove('hidden');
+        }
+
+        checkFormatsBtn.addEventListener('click', async () => {
+            const url = document.getElementById('videoUrl').value;
+            if (!url) {
+                showError('Veuillez entrer une URL');
+                return;
+            }
+
+            hideError();
+            setLoading('check');
+            try {
+                const response = await axios.get(`${API_BASE_URL}/formats`, { params: { url } });
+                updateVideoInfo(response.data);
+                updateFormats(response.data.formats);
+            } catch (error) {
+                showError(error.response?.data?.detail || 'Erreur lors de la vérification de l\'URL');
+                formatSelection.classList.add('hidden');
+                videoInfo.classList.add('hidden');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        formatSelect.addEventListener('change', () => {
+            downloadBtn.disabled = !formatSelect.value;
+        });
+
+        downloadBtn.addEventListener('click', async () => {
+            const url = document.getElementById('videoUrl').value;
+            const format = formatSelect.value;
+
+            if (!url || !format) {
+                showError('Veuillez entrer une URL et sélectionner un format');
+                return;
+            }
+
+            hideError();
+            setLoading('download');
+            downloadInfoDiv.classList.remove('hidden');
+            document.getElementById('downloadLink').classList.add('hidden');
+            document.getElementById('downloadProgress').textContent = 'Téléchargement en cours...';
+
+            try {
+                const response = await axios.post(`${API_BASE_URL}/download`, { url, format });
+                showDownloadInfo(response.data);
+            } catch (error) {
+                showError(error.response?.data?.detail || 'Erreur lors du téléchargement');
+            } finally {
+                setLoading(false);
+            }
+        });
+    </script>
+</body>
+</html> 
