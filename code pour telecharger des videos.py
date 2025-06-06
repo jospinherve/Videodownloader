@@ -8,8 +8,6 @@ import yt_dlp
 import uuid
 import os
 import logging
-import ssl
-import certifi
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -24,13 +22,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
-# Configuration SSL
-ssl_context = ssl.create_default_context()
-ssl_context.load_verify_locations(certifi.where())
-
-# Configuration yt-dlp globale
-yt_dlp.utils.std_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 app = FastAPI(title="Video Downloader API")
 
@@ -321,42 +312,20 @@ def filter_best_formats(formats):
 async def get_formats(url: str):
     """Récupère les formats disponibles pour une URL donnée."""
     try:
-        # Configuration avancée pour yt-dlp
+        # Configuration simple pour yt-dlp
         ydl_opts = {
             'quiet': True,
-            'no_warnings': False,
-            'extract_flat': False,
-            'youtube_include_dash_manifest': True,
+            'no_warnings': True,
             'nocheckcertificate': True,
-            'ignoreerrors': True,
-            'no_color': True,
-            'format': 'best',
-            'socket_timeout': 30,
-            'retries': 10,
-            'fragment_retries': 10,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            }
         }
-
-        # Ajout du certificat SSL si disponible
-        cert_path = certifi.where()
-        if os.path.exists(cert_path):
-            ydl_opts['source_address'] = '0.0.0.0'
-            os.environ['SSL_CERT_FILE'] = cert_path
-            os.environ['REQUESTS_CA_BUNDLE'] = cert_path
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extraction des informations sans téléchargement
             info = ydl.extract_info(url, download=False)
             
             if info is None:
                 raise HTTPException(
                     status_code=400,
-                    detail="La vidéo n'est pas accessible. Elle peut être privée, supprimée ou soumise à des restrictions."
+                    detail="La vidéo n'est pas accessible."
                 )
 
             # Filtrer pour obtenir les meilleurs formats
@@ -368,7 +337,6 @@ async def get_formats(url: str):
                 try:
                     format_note = []
                     
-                    # Construire une description claire et simple
                     if f.get('vcodec', 'none') != 'none':
                         height = int(f.get('height', 0) or 0)
                         if height > 0:
@@ -385,19 +353,11 @@ async def get_formats(url: str):
                         if abr > 0:
                             format_note.append(f"{int(abr)}kbps")
                     
-                    filesize = float(f.get('filesize', 0) or 0)
-                    if filesize > 0:
-                        size_mb = filesize / (1024 * 1024)
-                        if size_mb >= 1024:
-                            format_note.append(f"{size_mb/1024:.1f}GB")
-                        else:
-                            format_note.append(f"{size_mb:.1f}MB")
-                    
                     formats.append(FormatInfo(
                         format_id=f.get('format_id', ''),
                         ext=f.get('ext', ''),
                         resolution=f"{int(f.get('height', 0) or 0)}p" if f.get('height') else None,
-                        filesize=filesize,
+                        filesize=float(f.get('filesize', 0) or 0),
                         format_note=' - '.join(format_note) if format_note else "Format inconnu",
                         vcodec=f.get('vcodec'),
                         acodec=f.get('acodec')
@@ -422,7 +382,7 @@ async def get_formats(url: str):
         logging.error(f"Erreur lors de la récupération des formats: {str(e)}")
         raise HTTPException(
             status_code=400,
-            detail=f"La vidéo n'est pas accessible ou a été supprimée. Erreur: {str(e)}"
+            detail=f"Erreur lors de la récupération des formats: {str(e)}"
         )
 
 @app.get("/", response_class=HTMLResponse)
