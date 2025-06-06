@@ -169,13 +169,16 @@ async def download_video(data: DownloadRequest):
         )
 
     try:
-        # Configuration pour le téléchargement
+        # Configuration mise à jour pour le téléchargement
         ydl_opts = {
             'format': data.format,
             'outtmpl': os.path.join(DOWNLOAD_DIR, '%(title)s-%(format_id)s.%(ext)s'),
             'quiet': True,
             'noplaylist': True,
             'writethumbnail': True,
+            'nocheckcertificate': True,
+            'no_check_certificate': True,
+            'prefer_insecure': True
         }
 
         # Si c'est un format audio uniquement
@@ -312,11 +315,13 @@ def filter_best_formats(formats):
 async def get_formats(url: str):
     """Récupère les formats disponibles pour une URL donnée."""
     try:
-        # Configuration simple pour yt-dlp
+        # Configuration mise à jour pour yt-dlp
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
+            'no_check_certificate': True,
+            'prefer_insecure': True
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
