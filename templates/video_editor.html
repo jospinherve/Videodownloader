@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Éditeur de Vidéos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
+    <div class="container mx-auto px-4 py-8">
+        <nav class="mb-8">
+            <a href="/" class="text-blue-400 hover:text-blue-300 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                </svg>
+                Retour au téléchargement
+            </a>
+        </nav>
+
+        <div class="max-w-4xl mx-auto bg-gray-800 rounded-lg shadow-xl p-8">
+            <h1 class="text-4xl font-bold mb-2 text-center bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+                Éditeur de Vidéos
+            </h1>
+            <p class="text-gray-400 text-center mb-8">
+                Modifiez vos vidéos facilement
+            </p>
+
+            <div class="space-y-6">
+                <!-- Sélection de fichier -->
+                <div class="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
+                    <input type="file" id="videoInput" accept="video/*" class="hidden">
+                    <label for="videoInput" class="cursor-pointer">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span class="mt-2 block text-gray-400">Sélectionnez une vidéo à éditer</span>
+                    </label>
+                </div>
+
+                <!-- Prévisualisation vidéo -->
+                <div id="videoPreview" class="hidden">
+                    <video id="videoPlayer" controls class="w-full rounded-lg">
+                        Votre navigateur ne supporte pas la lecture de vidéos.
+                    </video>
+                </div>
+
+                <!-- Outils d'édition -->
+                <div id="editTools" class="hidden space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Découpage -->
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="text-lg font-medium mb-3">Découpage</h3>
+                            <div class="space-y-2">
+                                <div class="flex gap-4">
+                                    <div class="flex-1">
+                                        <label class="block text-sm text-gray-400">Début</label>
+                                        <input type="text" id="startTime" placeholder="00:00" class="w-full bg-gray-600 rounded p-2">
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="block text-sm text-gray-400">Fin</label>
+                                        <input type="text" id="endTime" placeholder="00:00" class="w-full bg-gray-600 rounded p-2">
+                                    </div>
+                                </div>
+                                <button id="cutBtn" class="w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-2">
+                                    Découper
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Division -->
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="text-lg font-medium mb-3">Division</h3>
+                            <div class="space-y-2">
+                                <input type="number" id="segments" placeholder="Nombre de segments" class="w-full bg-gray-600 rounded p-2">
+                                <button id="divideBtn" class="w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-2">
+                                    Diviser
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Commentaires -->
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="text-lg font-medium mb-3">Ajouter un commentaire</h3>
+                            <div class="space-y-2">
+                                <input type="text" id="commentText" placeholder="Texte du commentaire" class="w-full bg-gray-600 rounded p-2">
+                                <div class="flex gap-2">
+                                    <input type="text" id="commentTime" placeholder="Temps (00:00)" class="flex-1 bg-gray-600 rounded p-2">
+                                    <input type="number" id="commentDuration" placeholder="Durée (s)" class="w-24 bg-gray-600 rounded p-2">
+                                </div>
+                                <button id="addCommentBtn" class="w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-2">
+                                    Ajouter
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Export -->
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="text-lg font-medium mb-3">Exporter</h3>
+                            <div class="space-y-2">
+                                <select id="exportFormat" class="w-full bg-gray-600 rounded p-2">
+                                    <option value="mp4">MP4</option>
+                                    <option value="webm">WebM</option>
+                                    <option value="mov">MOV</option>
+                                </select>
+                                <button id="exportBtn" class="w-full bg-green-600 hover:bg-green-500 rounded-lg py-2">
+                                    Exporter
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages d'erreur -->
+                <div id="error" class="hidden p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoInput = document.getElementById('videoInput');
+        const videoPreview = document.getElementById('videoPreview');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const editTools = document.getElementById('editTools');
+        const errorDiv = document.getElementById('error');
+
+        // Gestion du chargement de la vidéo
+        videoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                videoPlayer.src = url;
+                videoPreview.classList.remove('hidden');
+                editTools.classList.remove('hidden');
+                errorDiv.classList.add('hidden');
+            }
+        });
+
+        // Fonction pour afficher les erreurs
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        // Gestion du découpage
+        document.getElementById('cutBtn').addEventListener('click', async () => {
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            
+            try {
+                const response = await axios.post('/api/edit/cut', {
+                    startTime,
+                    endTime
+                });
+                // Gérer la réponse
+            } catch (error) {
+                showError('Erreur lors du découpage de la vidéo');
+            }
+        });
+
+        // Gestion de la division
+        document.getElementById('divideBtn').addEventListener('click', async () => {
+            const segments = document.getElementById('segments').value;
+            
+            try {
+                const response = await axios.post('/api/edit/divide', {
+                    segments
+                });
+                // Gérer la réponse
+            } catch (error) {
+                showError('Erreur lors de la division de la vidéo');
+            }
+        });
+
+        // Gestion des commentaires
+        document.getElementById('addCommentBtn').addEventListener('click', async () => {
+            const text = document.getElementById('commentText').value;
+            const time = document.getElementById('commentTime').value;
+            const duration = document.getElementById('commentDuration').value;
+            
+            try {
+                const response = await axios.post('/api/edit/comment', {
+                    text,
+                    time,
+                    duration
+                });
+                // Gérer la réponse
+            } catch (error) {
+                showError('Erreur lors de l\'ajout du commentaire');
+            }
+        });
+
+        // Gestion de l'export
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            const format = document.getElementById('exportFormat').value;
+            
+            try {
+                const response = await axios.post('/api/edit/export', {
+                    format
+                });
+                // Gérer la réponse
+            } catch (error) {
+                showError('Erreur lors de l\'export de la vidéo');
+            }
+        });
+    </script>
+</body>
+</html> 

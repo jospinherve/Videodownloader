@@ -1,11 +1,11 @@
-# main.py
-from fastapi import FastAPI, Request, HTTPException
+# main.py  uvicorn "code pour telecharger des videos:app" --reload
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
-from typing import Optional
+from typing import Optional, List
 import yt_dlp
 import uuid
 import os
@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 import asyncio
 import re
 import urllib.parse
+import subprocess
+import shutil
 
 # Configuration du logging
 logging.basicConfig(
@@ -38,16 +40,25 @@ app.add_middleware(
     max_age=3600,  # Cache la pré-vérification pendant 1 heure
 )
 
-# Monter les fichiers statiques
+# Configuration des templates et fichiers statiques
+templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Configuration des templates
-templates = Jinja2Templates(directory=".")
 
 # Constants
 DOWNLOAD_DIR = "./downloads"
+TEMP_DIR = "./temp"
+STATIC_DIR = "./static"
+TEMPLATES_DIR = "./templates"
 MAX_FILE_AGE_MINUTES = 30  # Fichiers supprimés après 30 minutes
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+def init_directories():
+    """Initialise les dossiers nécessaires pour l'application"""
+    directories = [DOWNLOAD_DIR, TEMP_DIR, STATIC_DIR, TEMPLATES_DIR]
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        logging.info(f"Dossier créé/vérifié : {directory}")
+
+init_directories()
 
 # Liste des domaines bloqués
 BLOCKED_DOMAINS = [
@@ -102,6 +113,25 @@ class VideoInfo(BaseModel):
     formats: list[FormatInfo]
     thumbnail: Optional[str]
     duration: Optional[float]
+
+class CutRequest(BaseModel):
+    filename: str
+    start_time: str
+    end_time: str
+
+class DivideRequest(BaseModel):
+    filename: str
+    segments: int
+
+class CommentRequest(BaseModel):
+    filename: str
+    text: str
+    time: str
+    duration: int
+
+class ExportRequest(BaseModel):
+    filename: str
+    format: str
 
 async def cleanup_old_files():
     """Supprime les fichiers plus vieux que MAX_FILE_AGE_MINUTES"""
@@ -190,14 +220,18 @@ async def download_video(data: DownloadRequest):
         }
 
         # Si c'est un format audio uniquement
-        if data.format == 'bestaudio':
+        if data.format.lower() in ['bestaudio', 'mp3']:
             ydl_opts.update({
+                'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-                'format': 'bestaudio/best',
+                'extractaudio': True,
+                'audioformat': 'mp3',
+                'audioquality': '0',  # Meilleure qualité
+                'final_ext': 'mp3',  # Force l'extension finale en mp3
             })
 
         logging.info(f"Début du téléchargement: {data.url} (format: {data.format})")
@@ -326,70 +360,85 @@ async def get_formats(url: str):
         # Configuration mise à jour pour yt-dlp
         ydl_opts = {
             'quiet': True,
-            'no_warnings': True,
+            'no_warnings': False,  # Activer les avertissements pour le débogage
+            'extract_flat': False,
+            'format': 'best',
             'nocheckcertificate': True,
             'no_check_certificate': True,
-            'prefer_insecure': True
+            'prefer_insecure': True,
+            'ignoreerrors': True,  # Ignorer les erreurs non critiques
+            'youtube_include_dash_manifest': True,  # Inclure les formats DASH
+            'youtube_include_hls_manifest': True,   # Inclure les formats HLS
+            'verbose': True,  # Activer le mode verbeux pour le débogage
         }
         
+        logging.info(f"Tentative de récupération des formats pour l'URL: {url}")
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            if info is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="La vidéo n'est pas accessible."
-                )
-
-            # Filtrer pour obtenir les meilleurs formats
-            best_formats = filter_best_formats(info.get('formats', []))
-            
-            # Convertir en FormatInfo
-            formats = []
-            for f in best_formats:
-                try:
-                    format_note = []
-                    
-                    if f.get('vcodec', 'none') != 'none':
-                        height = int(f.get('height', 0) or 0)
-                        if height > 0:
-                            format_note.append(f"{height}p")
+            try:
+                info = ydl.extract_info(url, download=False)
+                if info is None:
+                    raise ValueError("Impossible d'extraire les informations de la vidéo")
+                
+                logging.info(f"Formats trouvés: {len(info.get('formats', []))}")
+                
+                # Filtrer pour obtenir les meilleurs formats
+                best_formats = filter_best_formats(info.get('formats', []))
+                
+                if not best_formats:
+                    raise ValueError("Aucun format compatible n'a été trouvé")
+                
+                # Convertir en FormatInfo
+                formats = []
+                for f in best_formats:
+                    try:
+                        format_note = []
                         
-                        fps = float(f.get('fps', 0) or 0)
-                        if fps > 30:
-                            format_note.append(f"{int(fps)}fps")
-                    
-                    if f.get('acodec', 'none') != 'none':
-                        if f.get('vcodec', 'none') == 'none':
-                            format_note.append("Audio")
-                        abr = float(f.get('abr', 0) or 0)
-                        if abr > 0:
-                            format_note.append(f"{int(abr)}kbps")
-                    
-                    formats.append(FormatInfo(
-                        format_id=f.get('format_id', ''),
-                        ext=f.get('ext', ''),
-                        resolution=f"{int(f.get('height', 0) or 0)}p" if f.get('height') else None,
-                        filesize=float(f.get('filesize', 0) or 0),
-                        format_note=' - '.join(format_note) if format_note else "Format inconnu",
-                        vcodec=f.get('vcodec'),
-                        acodec=f.get('acodec')
-                    ))
-                except (TypeError, ValueError):
-                    continue
+                        if f.get('vcodec', 'none') != 'none':
+                            height = int(f.get('height', 0) or 0)
+                            if height > 0:
+                                format_note.append(f"{height}p")
+                            
+                            fps = float(f.get('fps', 0) or 0)
+                            if fps > 30:
+                                format_note.append(f"{int(fps)}fps")
+                        
+                        if f.get('acodec', 'none') != 'none':
+                            if f.get('vcodec', 'none') == 'none':
+                                format_note.append("Audio")
+                            abr = float(f.get('abr', 0) or 0)
+                            if abr > 0:
+                                format_note.append(f"{int(abr)}kbps")
+                        
+                        formats.append(FormatInfo(
+                            format_id=f.get('format_id', ''),
+                            ext=f.get('ext', ''),
+                            resolution=f"{int(f.get('height', 0) or 0)}p" if f.get('height') else None,
+                            filesize=float(f.get('filesize', 0) or 0),
+                            format_note=' - '.join(format_note) if format_note else "Format inconnu",
+                            vcodec=f.get('vcodec'),
+                            acodec=f.get('acodec')
+                        ))
+                    except (TypeError, ValueError) as e:
+                        logging.warning(f"Erreur lors du traitement d'un format: {str(e)}")
+                        continue
 
-            if not formats:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Aucun format valide n'a été trouvé pour cette URL"
+                if not formats:
+                    raise ValueError("Aucun format valide n'a été trouvé après le filtrage")
+
+                return VideoInfo(
+                    title=info.get('title', ''),
+                    formats=formats,
+                    thumbnail=info.get('thumbnail'),
+                    duration=info.get('duration')
                 )
 
-            return VideoInfo(
-                title=info.get('title', ''),
-                formats=formats,
-                thumbnail=info.get('thumbnail'),
-                duration=info.get('duration')
-            )
+            except yt_dlp.utils.DownloadError as e:
+                logging.error(f"Erreur yt-dlp lors de l'extraction: {str(e)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Erreur lors de l'extraction des informations: {str(e)}"
+                )
 
     except Exception as e:
         logging.error(f"Erreur lors de la récupération des formats: {str(e)}")
@@ -400,4 +449,150 @@ async def get_formats(url: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    try:
+        return templates.TemplateResponse("index.html", {"request": request})
+    except Exception as e:
+        logging.error(f"Erreur lors du rendu de index.html: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/video_editor", response_class=HTMLResponse)
+async def editor(request: Request):
+    try:
+        return templates.TemplateResponse("video_editor.html", {"request": request})
+    except Exception as e:
+        logging.error(f"Erreur lors du rendu de video_editor.html: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Fonctions d'édition vidéo
+def cut_video(input_file: str, output_file: str, start_time: str, end_time: str) -> bool:
+    try:
+        cmd = [
+            'ffmpeg', '-i', input_file,
+            '-ss', start_time,
+            '-to', end_time,
+            '-c', 'copy',
+            output_file
+        ]
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Erreur lors du découpage de la vidéo: {str(e)}")
+        return False
+
+def divide_video(input_file: str, segments: int, output_pattern: str) -> List[str]:
+    try:
+        # Obtenir la durée totale de la vidéo
+        cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', input_file]
+        duration = float(subprocess.check_output(cmd).decode().strip())
+        
+        # Calculer la durée de chaque segment
+        segment_duration = duration / segments
+        output_files = []
+        
+        for i in range(segments):
+            start_time = i * segment_duration
+            output_file = output_pattern.format(i + 1)
+            
+            cmd = [
+                'ffmpeg', '-i', input_file,
+                '-ss', str(start_time),
+                '-t', str(segment_duration),
+                '-c', 'copy',
+                output_file
+            ]
+            subprocess.run(cmd, check=True)
+            output_files.append(os.path.basename(output_file))
+        
+        return output_files
+    except (subprocess.CalledProcessError, ValueError) as e:
+        logging.error(f"Erreur lors de la division de la vidéo: {str(e)}")
+        return []
+
+def add_comment_to_video(input_file: str, output_file: str, text: str, time: str, duration: int) -> bool:
+    try:
+        # Convertir le temps en secondes
+        h, m, s = map(int, time.split(':'))
+        start_seconds = h * 3600 + m * 60 + s
+        
+        cmd = [
+            'ffmpeg', '-i', input_file,
+            '-vf', f"drawtext=text='{text}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=h-th-10:enable='between(t,{start_seconds},{start_seconds + duration})'",
+            '-c:a', 'copy',
+            output_file
+        ]
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Erreur lors de l'ajout du commentaire: {str(e)}")
+        return False
+
+# Routes pour l'édition vidéo
+@app.post("/api/edit/cut")
+async def edit_cut_video(request: CutRequest):
+    input_file = os.path.join(DOWNLOAD_DIR, request.filename)
+    if not os.path.exists(input_file):
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+    
+    output_file = os.path.join(TEMP_DIR, f"cut_{uuid.uuid4()}.mp4")
+    if cut_video(input_file, output_file, request.start_time, request.end_time):
+        shutil.move(output_file, input_file)
+        return {"success": True, "message": "Vidéo découpée avec succès"}
+    else:
+        raise HTTPException(status_code=500, detail="Erreur lors du découpage de la vidéo")
+
+@app.post("/api/edit/divide")
+async def edit_divide_video(request: DivideRequest):
+    input_file = os.path.join(DOWNLOAD_DIR, request.filename)
+    if not os.path.exists(input_file):
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+    
+    output_pattern = os.path.join(TEMP_DIR, f"segment_{uuid.uuid4()}_{{0}}.mp4")
+    output_files = divide_video(input_file, request.segments, output_pattern)
+    
+    if output_files:
+        return {"success": True, "files": output_files}
+    else:
+        raise HTTPException(status_code=500, detail="Erreur lors de la division de la vidéo")
+
+@app.post("/api/edit/comment")
+async def edit_add_comment(request: CommentRequest):
+    input_file = os.path.join(DOWNLOAD_DIR, request.filename)
+    if not os.path.exists(input_file):
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+    
+    output_file = os.path.join(TEMP_DIR, f"comment_{uuid.uuid4()}.mp4")
+    if add_comment_to_video(input_file, output_file, request.text, request.time, request.duration):
+        shutil.move(output_file, input_file)
+        return {"success": True, "message": "Commentaire ajouté avec succès"}
+    else:
+        raise HTTPException(status_code=500, detail="Erreur lors de l'ajout du commentaire")
+
+@app.post("/api/edit/export")
+async def edit_export_video(request: ExportRequest):
+    input_file = os.path.join(DOWNLOAD_DIR, request.filename)
+    if not os.path.exists(input_file):
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+    
+    output_file = os.path.join(TEMP_DIR, f"export_{uuid.uuid4()}.{request.format}")
+    try:
+        cmd = ['ffmpeg', '-i', input_file, output_file]
+        subprocess.run(cmd, check=True)
+        shutil.move(output_file, input_file)
+        return {"success": True, "message": "Vidéo exportée avec succès"}
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Erreur lors de l'export de la vidéo: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'export de la vidéo")
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        filename = f"upload_{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.join(DOWNLOAD_DIR, filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return {"filename": filename}
+    except Exception as e:
+        logging.error(f"Erreur lors de l'upload du fichier: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'upload du fichier")
